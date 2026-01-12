@@ -1,0 +1,23 @@
+{
+  "name": "solidjs-platforma",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@solidjs/router": "^0.15.4",
+    "firebase": "^12.6.0",
+    "solid-js": "^1.9.10"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.17",
+    "daisyui": "^5.5.5",
+    "tailwindcss": "^4.1.17",
+    "vite": "^7.2.2",
+    "vite-plugin-solid": "^2.11.10"
+  }
+}
