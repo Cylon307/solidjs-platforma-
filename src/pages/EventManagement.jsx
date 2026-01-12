@@ -2,250 +2,368 @@ import { createSignal, Show, For, createEffect } from "solid-js";
 import { authService } from "../services/auth.js";
 import Message from "../components/Message.jsx";
 import { db } from "../lib/firebase.js";
-import { collection, addDoc, query, where, updateDoc, deleteDoc, getDocs, doc, limit, orderBy } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  query,
+  where,
+  updateDoc,
+  deleteDoc,
+  getDocs,
+  doc,
+  limit,
+  orderBy
+} from "firebase/firestore";
+
+const CATEGORIES = ["Sports", "Music", "Social", "Other"];
 
 export default function EventManagement() {
-    let formRef;
+  let formRef;
+  const [searchTerm, setSearchTerm] = createSignal("");
+  const [filterCategory, setFilterCategory] = createSignal(""); // "" = sve
+  const [events, setEvents] = createSignal([]);
+  const [selectedEvent, setSelectedEvent] = createSignal(null);
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal(null);
+  const [success, setSuccess] = createSignal(null);
 
-    const [searchTerm, setSearchTerm] = createSignal("");
-    const [events, setEvents] = createSignal([]);
-    const [selectedEvent, setSelectedEvent] = createSignal(null);
-    const [loading, setLoading] = createSignal(false);
-    const [error, setError] = createSignal(null);
-    const [success, setSuccess] = createSignal(null);
+  // ────────────────────────────────────────────────
+  // Učitavanje / osvježavanje liste događaja
+  // ────────────────────────────────────────────────
+  const loadEvents = async () => {
+    setLoading(true);
+    try {
+      const userId = authService.getCurrentUser().uid;
+      const eventsRef = collection(db, "events");
 
-    // učitavanje prvih 10 događaja
-    const loadInitialEvents = async () => {
-        setLoading(true);
-        try {
-            const userId = authService.getCurrentUser().uid;
-            const eventsRef = collection(db, "events");
-            const q = query(
-                eventsRef,
-                where("userId", "==", userId),
-                orderBy("created", "desc"),
-                limit(10)
-            );
-            const snapshot = await getDocs(q);
-            setEvents(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        } catch (error) {
-            console.error(error.message);
-            setError("Greška inicijalnog učitavanja događaja");
-        } finally {
-            setLoading(false);
-        }
+      let q = query(
+        eventsRef,
+        where("userId", "==", userId),
+        orderBy("created", "desc")
+      );
+
+      // filtriranje po kategoriji ako je odabrano
+      if (filterCategory()) {
+        q = query(q, where("category", "==", filterCategory()));
+      }
+
+      // možemo ostaviti limit(10) ili maknuti limit ako želimo sve
+      // q = query(q, limit(50));   // po želji
+
+      const snapshot = await getDocs(q);
+      const loadedEvents = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      setEvents(loadedEvents);
+    } catch (err) {
+      console.error(err);
+      setError("Greška pri učitavanju događaja");
+    } finally {
+      setLoading(false);
     }
-    loadInitialEvents(); // poziv pri pokretanju komponenta
+  };
 
-    // pretraživanje
-    const searchEvents = async () => {
-        const term = searchTerm().toLowerCase().trim();
-        if (!term || term.length <= 3) return;
+  // početno učitavanje + reakcija na promjenu filtera
+  createEffect(() => {
+    loadEvents();
+  });
 
-        setLoading(true);
-        setError(null);
-        setSuccess(null);
-
-        try {
-            const userId = authService.getCurrentUser().uid;
-            const eventsRef = collection(db, "events");
-            const q = query(
-                eventsRef,
-                where("userId", "==", userId),
-                orderBy("created", "desc"),
-                limit(100)
-            );
-            const snapshot = await getDocs(q);
-            const found = snapshot.docs
-                .map((doc) => ({ id: doc.id, ...doc.data() }))
-                .filter((event) => event.name.toLowerCase().includes(term));
-            setEvents(found);
-        } catch (error) {
-            console.error(error.message);
-            setError("Greška pretraživanja");
-        } finally {
-            setLoading(false);
-        }
+  // pretraživanje (može se kombinirati s filterom kategorije)
+  const searchEvents = async () => {
+    const term = searchTerm().toLowerCase().trim();
+    if (!term || term.length <= 2) {
+      loadEvents(); // reset na sve
+      return;
     }
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    setLoading(true);
+    try {
+      const userId = authService.getCurrentUser().uid;
+      const eventsRef = collection(db, "events");
 
-        setError(null);
-        setSuccess(null);
+      let q = query(
+        eventsRef,
+        where("userId", "==", userId),
+        orderBy("created", "desc")
+      );
 
-        const userId = authService.getCurrentUser().uid;
+      if (filterCategory()) {
+        q = query(q, where("category", "==", filterCategory()));
+      }
 
-        const data = new FormData(e.target);
-        const eventData = {
-            name: data.get("name"),
-            description: data.get("description"),
-            datetime: new Date(data.get("datetime")),
-            isPrivate: !!data.get("isPrivate"),
-            userId: userId,
-            created: new Date()
-        };
-        console.log("Event data", eventData);
+      const snapshot = await getDocs(q);
+      const found = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((event) => event.name?.toLowerCase().includes(term));
 
-        try {
-            if (selectedEvent()) {
-                // ažuriranje
-                const docRef = doc(db, "events", selectedEvent().id);
-                await updateDoc(docRef, eventData);
-                setEvents(
-                    events().map((event) => (event.id === selectedEvent().id ? { ...event, ...eventData } : event))
-                );
-                setSelectedEvent({ ...selectedEvent(), ...eventData });
-            } else {
-                // dodavanje
-                const eventsRef = collection(db, "events");
-                const docRef = await addDoc(eventsRef, eventData);
-                setEvents([...events(), { id: docRef.id, ...eventData }]);
-                e.target.reset();
-            }
-            setSuccess(selectedEvent() ? "Događaj je uspješno ažuriran" : "Događaj je uspješno dodan");
-        } catch (error) {
-            console.error("Operation error", error.message);
-            setError(selectedEvent() ? "Ažuriranje događaja nije uspjelo" : "Dodavanje događaja nije uspjelo");
-        }
+      setEvents(found);
+    } catch (err) {
+      console.error(err);
+      setError("Greška pri pretraživanju");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    const userId = authService.getCurrentUser().uid;
+    const data = new FormData(e.target);
+
+    const eventData = {
+      name: data.get("name")?.trim(),
+      description: data.get("description")?.trim(),
+      datetime: new Date(data.get("datetime")),
+      isPrivate: !!data.get("isPrivate"),
+      category: data.get("category") || "Other",   // ← novo polje
+      userId,
+      created: new Date()
     };
 
-    // brisanje
-    const handleDelete = async () => {
-        if (!confirm("Jeste li sigurni?")) return;
+    try {
+      if (selectedEvent()) {
+        // update
+        const docRef = doc(db, "events", selectedEvent().id);
+        await updateDoc(docRef, eventData);
+        setEvents(
+          events().map((ev) =>
+            ev.id === selectedEvent().id ? { ...ev, ...eventData } : ev
+          )
+        );
+        setSelectedEvent({ ...selectedEvent(), ...eventData });
+        setSuccess("Događaj ažuriran");
+      } else {
+        // create
+        const docRef = await addDoc(collection(db, "events"), eventData);
+        setEvents([...events(), { id: docRef.id, ...eventData }]);
+        e.target.reset();
+        setSuccess("Događaj dodan");
+      }
+    } catch (err) {
+      console.error(err);
+      setError(
+        selectedEvent()
+          ? "Ažuriranje nije uspjelo"
+          : "Dodavanje nije uspjelo"
+      );
+    }
+  };
 
-        setError(null);
-        setSuccess(null);
+  const handleDelete = async () => {
+    if (!confirm("Sigurno želite obrisati događaj?")) return;
+    setError(null);
+    setSuccess(null);
 
-        try {
-            const docRef = doc(db, "events", selectedEvent().id);
-            await deleteDoc(docRef);
-            setEvents(events().filter((event) => (event.id !== selectedEvent().id)));
-            setSelectedEvent(null);
-            formRef.reset();
-            setSuccess("Događaj je uspješno obrisan");
-        } catch (error) {
-            console.error("Delete error", error.message);
-            setError("Brisanje nije uspjelo");
-        }
-    };
+    try {
+      const docRef = doc(db, "events", selectedEvent().id);
+      await deleteDoc(docRef);
+      setEvents(events().filter((ev) => ev.id !== selectedEvent().id));
+      setSelectedEvent(null);
+      formRef.reset();
+      setSuccess("Događaj obrisan");
+    } catch (err) {
+      console.error(err);
+      setError("Brisanje nije uspjelo");
+    }
+  };
 
-    createEffect(() => {
-        if (selectedEvent() && formRef) {
-            const event = selectedEvent();
-            formRef.name.value = event.name;
-            formRef.description.value = event.description;
-            if (event.datetime) {
-                const date = event.datetime.toDate ? event.datetime.toDate() : event.datetime;
-                formRef.datetime.value = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-            }
-            formRef.isPrivate.checked = event.isPrivate;
-        }
+  createEffect(() => {
+    if (selectedEvent() && formRef) {
+      const ev = selectedEvent();
+      formRef.name.value = ev.name || "";
+      formRef.description.value = ev.description || "";
+      formRef.category.value = ev.category || "Other";
+      if (ev.datetime) {
+        const date = ev.datetime.toDate ? ev.datetime.toDate() : ev.datetime;
+        formRef.datetime.value = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+          .toISOString()
+          .slice(0, 16);
+      }
+      formRef.isPrivate.checked = !!ev.isPrivate;
+    }
+  });
+
+  const formatEventDate = (datetime) => {
+    if (!datetime) return "—";
+    const d = datetime.toDate ? datetime.toDate() : new Date(datetime);
+    return d.toLocaleString("hr-HR", {
+      dateStyle: "medium",
+      timeStyle: "short"
     });
+  };
 
-    // pomoćna funkcija za oblikovanje datuma
-    const formatEventDate = (datetime) => {
-        if (!datetime) return "Nije zadan datum";
-        if (datetime.toDate) return datetime.toDate().toLocaleString();
-        if (datetime.toLocaleString) return datetime.toLocaleString();
-        return "Nije zadan datum";
-    }
+  return (
+    <>
+      <h1 class="text-2xl uppercase tracking-wider mb-6 text-center">
+        {selectedEvent() ? "Uređivanje događaja" : "Upravljanje događajima"}
+      </h1>
 
-    return (
-        <>
-            <h1 class="text-2xl uppercase tracking-wider mb-4 w-full text-center">
-                {selectedEvent() ? "Uređivanje događaja" : "Dodavanje događaja"}
-            </h1>
+      {/* Filteri – pretraga + kategorija */}
+      <div class="max-w-3xl mx-auto mb-6 flex flex-col sm:flex-row gap-4">
+        <div class="join w-full sm:w-2/3">
+          <input
+            class="input input-bordered join-item w-full"
+            type="text"
+            placeholder="Pretraži po nazivu..."
+            value={searchTerm()}
+            onInput={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && searchEvents()}
+          />
+          <button class="btn join-item" onClick={searchEvents}>
+            Traži
+          </button>
+        </div>
 
-            {/* Pretraživanje */}
-            <div class="max-w-2xl m-auto mb-4">
-                <div class="join w-full">
-                    <input
-                        class="input input-bordered join-item w-full"
-                        type="text"
-                        placeholder="Pretraživanje po nazivu"
-                        value={searchTerm()}
-                        onInput={(e) => setSearchTerm(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && searchEvents()}
-                    />
-                    <button class="btn join-item" onClick={searchEvents}>
-                        Traži
-                    </button>
+        <select
+          class="select select-bordered w-full sm:w-1/3"
+          value={filterCategory()}
+          onChange={(e) => setFilterCategory(e.target.value)}
+        >
+          <option value="">Sve kategorije</option>
+          <For each={CATEGORIES}>
+            {(cat) => <option value={cat}>{cat}</option>}
+          </For>
+        </select>
+      </div>
+
+      <Show when={loading()}>
+        <div class="flex justify-center my-8">
+          <span class="loading loading-spinner loading-lg"></span>
+        </div>
+      </Show>
+
+      <Show when={events().length > 0 && !loading()}>
+        <div class="max-w-3xl mx-auto mb-8 space-y-3">
+          <For each={events()}>
+            {(event) => (
+              <div
+                class={`card bg-base-200 shadow cursor-pointer hover:bg-base-300 transition-colors ${
+                  selectedEvent()?.id === event.id ? "ring-2 ring-primary" : ""
+                }`}
+                onClick={() => setSelectedEvent(event)}
+              >
+                <div class="card-body p-4">
+                  <div class="flex justify-between items-start">
+                    <h3 class="font-bold text-lg">{event.name}</h3>
+                    <div class="badge badge-outline badge-sm">
+                      {event.category || "Other"}
+                    </div>
+                  </div>
+                  <p class="text-sm text-gray-600 mt-1">
+                    {formatEventDate(event.datetime)}
+                    {event.isPrivate && (
+                      <span class="badge badge-warning badge-sm ml-2">Privatno</span>
+                    )}
+                  </p>
                 </div>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+
+      <Show when={!loading() && events().length === 0}>
+        <div class="alert alert-info max-w-2xl mx-auto">
+          <span>Nema događaja koji odgovaraju filtrima.</span>
+        </div>
+      </Show>
+
+      <Message message={error()} type="error" />
+      <Message message={success()} type="success" />
+
+      {/* Forma */}
+      <form
+        class="max-w-2xl mx-auto card bg-base-100 shadow-xl p-6"
+        onSubmit={handleSubmit}
+        ref={formRef}
+      >
+        <div class="grid grid-cols-1 gap-5">
+          <label class="form-control w-full">
+            <div class="label">
+              <span class="label-text">Naziv događaja</span>
             </div>
+            <input
+              type="text"
+              name="name"
+              class="input input-bordered w-full"
+              placeholder="npr. Ljetni malonogometni turnir"
+              required
+            />
+          </label>
 
-            {/* Tijek učitavanja */}
-            <Show when={loading()}>
-                <div class="flex justify-center">
-                    <span class="loading loading-spinner loading-lg"></span>
-                </div>
-            </Show>
+          <label class="form-control w-full">
+            <div class="label">
+              <span class="label-text">Kategorija</span>
+            </div>
+            <select name="category" class="select select-bordered w-full" required>
+              <For each={CATEGORIES}>
+                {(cat) => <option value={cat}>{cat}</option>}
+              </For>
+            </select>
+          </label>
 
-            {/* Prikaz događaja */}
-            <Show when={events().length > 0}>
-                <div class="max-w-2xl m-auto mb-4 space-y-2">
-                    <For each={events()}>
-                        {(event) => (
-                            <div
-                                class={`card bg-base-200 cursor-pointer hover:bg-base-300 ${selectedEvent()?.id === event.id ? "ring-2 ring-primary" : ""}`}
-                                onClick={() => setSelectedEvent(event)}
-                            >
-                                <div class="card-body p-4">
-                                    <h3 class="font-bold">{event.name}</h3>
-                                    <p class="text-sm text-gray-600">
-                                        {formatEventDate(event.datetime)}
-                                        {event.isPrivate && <span class="badge badge-sm ml-2">Privatan</span>}
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-                    </For>
-                </div>
-            </Show>
+          <label class="form-control w-full">
+            <div class="label">
+              <span class="label-text">Opis</span>
+            </div>
+            <textarea
+              name="description"
+              class="textarea textarea-bordered h-28"
+              placeholder="Kratki opis događaja..."
+              required
+            ></textarea>
+          </label>
 
-            <Message message={error()} type="error" />
-            <Message message={success()} />
+          <label class="form-control w-full">
+            <div class="label">
+              <span class="label-text">Datum i vrijeme</span>
+            </div>
+            <input
+              type="datetime-local"
+              name="datetime"
+              class="input input-bordered w-full"
+              required
+            />
+          </label>
 
-            <form class="max-w-2xl m-auto" onSubmit={handleSubmit} ref={formRef}>
-                <label class="floating-label mb-1 w-full">
-                    <input class="input input-md w-full" type="text" name="name" placeholder="Ime" required />
-                    <span>Naziv</span>
-                </label>
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-3">
+              <input type="checkbox" name="isPrivate" class="toggle" />
+              <span class="label-text">Privatni događaj (samo s pozivnicom)</span>
+            </label>
+          </div>
+        </div>
 
-                <fieldset class="fieldset">
-                    <textarea class="textarea h-24 w-full" placeholder="Opis" name="description" required></textarea>
-                </fieldset>
-
-                <label class="floating-label mb-1 w-full">
-                    <input class="input input-md w-full" type="datetime-local" name="datetime" placeholder="Datum i vrijeme" required />
-                    <span>Datum i vrijeme</span>
-                </label>
-
-                <fieldset class="fieldset py-2">
-                    <label class="label">
-                        <input type="checkbox" class="toggle" name="isPrivate" />
-                        Privatan događaj
-                    </label>
-                </fieldset>
-
-                <div class="flex gap-2 justify-between">
-                    <Show when={selectedEvent()}>
-                        <button type="button" class="btn btn-error" onClick={handleDelete}>
-                            Izbriši
-                        </button>
-                        <button type="button" class="btn btn-ghost"
-                            onClick={() => {
-                                setSelectedEvent(null);
-                                formRef.reset();
-                            }}>
-                            Odustani
-                        </button>
-                    </Show>
-                    <button type="submit" class="btn btn-primary">
-                        {selectedEvent() ? "Spremi" : "Dodaj"}
-                    </button>
-                </div>
-            </form>
-        </>
-    );
+        <div class="flex flex-wrap gap-3 justify-end mt-8">
+          <Show when={selectedEvent()}>
+            <button
+              type="button"
+              class="btn btn-error"
+              onClick={handleDelete}
+            >
+              Izbriši
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost"
+              onClick={() => {
+                setSelectedEvent(null);
+                formRef.reset();
+              }}
+            >
+              Odustani
+            </button>
+          </Show>
+          <button type="submit" class="btn btn-primary">
+            {selectedEvent() ? "Spremi promjene" : "Dodaj događaj"}
+          </button>
+        </div>
+      </form>
+    </>
+  );
 }
