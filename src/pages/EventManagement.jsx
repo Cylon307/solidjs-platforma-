@@ -20,16 +20,13 @@ const CATEGORIES = ["Sports", "Music", "Social", "Other"];
 export default function EventManagement() {
   let formRef;
   const [searchTerm, setSearchTerm] = createSignal("");
-  const [filterCategory, setFilterCategory] = createSignal(""); // "" = sve
+  const [filterCategory, setFilterCategory] = createSignal(""); 
   const [events, setEvents] = createSignal([]);
   const [selectedEvent, setSelectedEvent] = createSignal(null);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal(null);
   const [success, setSuccess] = createSignal(null);
 
-  // ────────────────────────────────────────────────
-  // Učitavanje / osvježavanje liste događaja
-  // ────────────────────────────────────────────────
   const loadEvents = async () => {
     setLoading(true);
     try {
@@ -41,14 +38,10 @@ export default function EventManagement() {
         where("userId", "==", userId),
         orderBy("created", "desc")
       );
-
-      // filtriranje po kategoriji ako je odabrano
+      //filtriranje
       if (filterCategory()) {
         q = query(q, where("category", "==", filterCategory()));
       }
-
-      // možemo ostaviti limit(10) ili maknuti limit ako želimo sve
-      // q = query(q, limit(50));   // po želji
 
       const snapshot = await getDocs(q);
       const loadedEvents = snapshot.docs.map((doc) => ({
@@ -65,16 +58,14 @@ export default function EventManagement() {
     }
   };
 
-  // početno učitavanje + reakcija na promjenu filtera
   createEffect(() => {
     loadEvents();
   });
 
-  // pretraživanje (može se kombinirati s filterom kategorije)
   const searchEvents = async () => {
     const term = searchTerm().toLowerCase().trim();
     if (!term || term.length <= 2) {
-      loadEvents(); // reset na sve
+      loadEvents();
       return;
     }
 
@@ -120,14 +111,13 @@ export default function EventManagement() {
       description: data.get("description")?.trim(),
       datetime: new Date(data.get("datetime")),
       isPrivate: !!data.get("isPrivate"),
-      category: data.get("category") || "Other",   // ← novo polje
+      category: data.get("category") || "Other",   
       userId,
       created: new Date()
     };
 
     try {
       if (selectedEvent()) {
-        // update
         const docRef = doc(db, "events", selectedEvent().id);
         await updateDoc(docRef, eventData);
         setEvents(
@@ -138,7 +128,6 @@ export default function EventManagement() {
         setSelectedEvent({ ...selectedEvent(), ...eventData });
         setSuccess("Događaj ažuriran");
       } else {
-        // create
         const docRef = await addDoc(collection(db, "events"), eventData);
         setEvents([...events(), { id: docRef.id, ...eventData }]);
         e.target.reset();
@@ -203,7 +192,7 @@ export default function EventManagement() {
         {selectedEvent() ? "Uređivanje događaja" : "Upravljanje događajima"}
       </h1>
 
-      {/* Filteri – pretraga + kategorija */}
+      {}
       <div class="max-w-3xl mx-auto mb-6 flex flex-col sm:flex-row gap-4">
         <div class="join w-full sm:w-2/3">
           <input
@@ -247,12 +236,14 @@ export default function EventManagement() {
                 }`}
                 onClick={() => setSelectedEvent(event)}
               >
+                //badge za prikaz
                 <div class="card-body p-4">
                   <div class="flex justify-between items-start">
                     <h3 class="font-bold text-lg">{event.name}</h3>
                     <div class="badge badge-outline badge-sm">
                       {event.category || "Other"}
                     </div>
+
                   </div>
                   <p class="text-sm text-gray-600 mt-1">
                     {formatEventDate(event.datetime)}
@@ -266,7 +257,7 @@ export default function EventManagement() {
           </For>
         </div>
       </Show>
-
+      //filtriranje
       <Show when={!loading() && events().length === 0}>
         <div class="alert alert-info max-w-2xl mx-auto">
           <span>Nema događaja koji odgovaraju filtrima.</span>
@@ -276,7 +267,7 @@ export default function EventManagement() {
       <Message message={error()} type="error" />
       <Message message={success()} type="success" />
 
-      {/* Forma */}
+      {}
       <form
         class="max-w-2xl mx-auto card bg-base-100 shadow-xl p-6"
         onSubmit={handleSubmit}
@@ -291,7 +282,7 @@ export default function EventManagement() {
               type="text"
               name="name"
               class="input input-bordered w-full"
-              placeholder="npr. Ljetni malonogometni turnir"
+              placeholder="Upisite naziv događaja ovdje"
               required
             />
           </label>
@@ -313,7 +304,7 @@ export default function EventManagement() {
             </div>
             <textarea
               name="description"
-              class="textarea textarea-bordered h-28"
+              class="textarea textarea-bordered w-150 h-15"
               placeholder="Kratki opis događaja..."
               required
             ></textarea>

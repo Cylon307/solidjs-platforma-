@@ -33,7 +33,6 @@ export default function Home() {
 
       let q = query(eventsRef, where("isPrivate", "==", false));
 
-      // filtriranje po kategoriji ako nije "All"
       if (selectedCategory() !== "All") {
         q = query(q, where("category", "==", selectedCategory()));
       }
@@ -46,7 +45,6 @@ export default function Home() {
 
       setEvents(loadedEvents);
 
-      // učitavanje korisnikovih favorita (samo ako je prijavljen)
       if (isAuthenticated()) {
         const userId = authService.getCurrentUser().uid;
         const userFavs = loadedEvents
@@ -61,16 +59,14 @@ export default function Home() {
     }
   };
 
-  // ponovno učitavanje kad se promijeni kategorija
   createEffect(() => {
     if (isAuthenticated()) {
       loadEvents();
     }
   });
 
-  // ovisnost i na promjenu selectedCategory
   createEffect(() => {
-    selectedCategory(); // samo da bi se efekt pokrenuo
+    selectedCategory(); 
     if (isAuthenticated()) {
       loadEvents();
     }
