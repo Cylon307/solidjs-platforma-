@@ -236,7 +236,6 @@ export default function EventManagement() {
                 }`}
                 onClick={() => setSelectedEvent(event)}
               >
-                //badge za prikaz
                 <div class="card-body p-4">
                   <div class="flex justify-between items-start">
                     <h3 class="font-bold text-lg">{event.name}</h3>
